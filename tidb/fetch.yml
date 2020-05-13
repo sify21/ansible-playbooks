@@ -3,12 +3,28 @@
 - hosts: localhost
   connection: local
   name: download tidb binaries
+  tags:
+      - local
   tasks:
       - file:
           path: "{{ playbook_dir }}/downloads"
           state: directory
           mode: 0755
       - get_url:
-          dest: "{{ playbook_dir }}/downloads"
+          dest: "{{ playbook_dir }}/downloads/tidb-latest-linux-amd64.tar.gz"
           url: https://download.pingcap.org/tidb-latest-linux-amd64.tar.gz
           checksum: sha256:https://download.pingcap.org/tidb-latest-linux-amd64.sha256
+- hosts: all
+  name: create tidb user
+  tags:
+      - create_user
+  vars:
+      ansible_user: root
+      ansible_password: "{{ lookup('env','ROOT_PWD') }}"
+  tasks:
+      - user:
+          name: tidb
+          state: present
+          system: yes
+          password: $6$ClKswGgtaf/jc4kf$9/KYqG43ueMfSoNE1VNSZrtJMeLTX7GTrqfpCjzHs.m.LVSDsm1cLCZp1GdFGYriTngRKYXTDZyJZgd1ghMoo/
+          expires: -1
