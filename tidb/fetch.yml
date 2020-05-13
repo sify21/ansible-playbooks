@@ -28,3 +28,5 @@
           system: yes
           password: $6$ClKswGgtaf/jc4kf$9/KYqG43ueMfSoNE1VNSZrtJMeLTX7GTrqfpCjzHs.m.LVSDsm1cLCZp1GdFGYriTngRKYXTDZyJZgd1ghMoo/
           expires: -1
+vars:
+    ansible_password: "{{ lookup('env','TIDB_PWD') }}"

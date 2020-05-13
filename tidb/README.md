@@ -2,4 +2,4 @@ ansible playbooks for installing tidb cluster on centos7 using binaries. includi
 - fetch  
   download required binaries
 - create_user  
-  create tidb user on servers. You should provide ROOT_PWD environment variables.
+  create tidb user on servers. You should provide ROOT_PWD and TIDB_PWD environment variables.
