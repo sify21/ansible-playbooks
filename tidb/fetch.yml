@@ -1,3 +1,14 @@
 ---
 
-
+- hosts: localhost
+  connection: local
+  name: download tidb binaries
+  tasks:
+      - file:
+          path: "{{ playbook_dir }}/downloads"
+          state: directory
+          mode: 0755
+      - get_url:
+          dest: "{{ playbook_dir }}/downloads"
+          url: https://download.pingcap.org/tidb-latest-linux-amd64.tar.gz
+          checksum: sha256:https://download.pingcap.org/tidb-latest-linux-amd64.sha256
