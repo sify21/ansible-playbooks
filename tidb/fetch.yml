@@ -5,7 +5,16 @@
   name: download tidb binaries
   tags:
       - local
+  vars:
+      root_pwd: "{{ lookup('env','ROOT_PWD') }}"
+      tidb_pwd: "{{ lookup('env','TIDB_PWD') }}"
   tasks:
+      - debug:
+          msg: "verifying ROOT_PWD environment variable is set"
+        failed_when: root_pwd == ''
+      - debug:
+          msg: "verifying TIDB_PWD environment variable is set"
+        failed_when: tidb_pwd == ''
       - file:
           path: "{{ playbook_dir }}/downloads"
           state: directory
@@ -21,12 +30,11 @@
   vars:
       ansible_user: root
       ansible_password: "{{ lookup('env','ROOT_PWD') }}"
+      tidb_password: "{{ lookup('env','TIDB_PWD') }}"
   tasks:
       - user:
           name: tidb
           state: present
           system: yes
-          password: $6$ClKswGgtaf/jc4kf$9/KYqG43ueMfSoNE1VNSZrtJMeLTX7GTrqfpCjzHs.m.LVSDsm1cLCZp1GdFGYriTngRKYXTDZyJZgd1ghMoo/
+          password: "{{ tidb_password | password_hash('sha512', 'mysecretsalt') }}"
           expires: -1
-vars:
-    ansible_password: "{{ lookup('env','TIDB_PWD') }}"
