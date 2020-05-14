@@ -24,9 +24,7 @@
           url: https://download.pingcap.org/tidb-latest-linux-amd64.tar.gz
           checksum: sha256:https://download.pingcap.org/tidb-latest-linux-amd64.sha256
 - hosts: all
-  name: create tidb user
-  tags:
-      - create_user
+  name: prepare remote system
   vars:
       ansible_user: root
       ansible_password: "{{ lookup('env','ROOT_PWD') }}"
@@ -38,3 +36,34 @@
           system: yes
           password: "{{ tidb_password | password_hash('sha512', 'mysecretsalt') }}"
           expires: -1
+        name: create tidb user
+- hosts: all
+  name: deploy
+  vars:
+      ansible_password: "{{ lookup('env','TIDB_PWD') }}"
+  tasks:
+      - copy:
+          dest: /home/tidb/tidb.tar.gz
+          src: downloads/tidb-latest-linux-amd64.tar.gz
+        name: copy binary file
+      - shell:
+          chdir: /home/tidb
+          cmd: tar -xzf tidb.tar.gz
+        name: extract binary file
+- hosts: pd_servers
+  name: start pd servers
+  vars:
+      ansible_password: "{{ lookup('env','TIDB_PWD') }}"
+- hosts: tikv_servers
+  name: start tikv servers
+  vars:
+      ansible_password: "{{ lookup('env','TIDB_PWD') }}"
+- hosts: tidb_servers
+  name: start tidb servers
+  vars:
+      ansible_password: "{{ lookup('env','TIDB_PWD') }}"
+  tasks:
+      - shell:
+          chdir: /home/tidb/tidb-latest-linux-amd64
+          cmd: ./bin/tidb-server --store=tikv --log-file=tidb.log --path="" &
+
