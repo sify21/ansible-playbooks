@@ -1,0 +1,169 @@
+---
+
+- hosts: localhost
+  connection: local
+  name: download tidb binaries
+  gather_facts: no
+  tags:
+      - local
+  vars:
+      root_pwd: "{{ lookup('env','ROOT_PWD') }}"
+      tidb_pwd: "{{ lookup('env','TIDB_PWD') }}"
+  tasks:
+      - debug:
+          msg: "verifying ROOT_PWD environment variable is set"
+        failed_when: root_pwd == ''
+      - debug:
+          msg: "verifying TIDB_PWD environment variable is set"
+        failed_when: tidb_pwd == ''
+      - debug:
+          msg: "{{ groups['pd_servers'] | map('extract', hostvars, ['ansible_host']) | join(':2379,') }}:2379"
+      - set_fact: 
+          nodelist: "{%for host in groups['pd_servers']%}{{host}}=http://{{hostvars[host].ansible_host}}:2380{% if not loop.last %},{% endif %}{% endfor %}"
+      - debug:
+          msg: "{{nodelist}}"
+      - file:
+          path: "{{ playbook_dir }}/downloads"
+          state: directory
+          mode: 0755
+      - get_url:
+          dest: "{{ playbook_dir }}/downloads/tidb-latest-linux-amd64.tar.gz"
+          url: https://download.pingcap.org/tidb-latest-linux-amd64.tar.gz
+          checksum: sha256:https://download.pingcap.org/tidb-latest-linux-amd64.sha256
+- hosts: all
+  name: prepare remote system
+  gather_facts: no
+  vars:
+      ansible_user: root
+      ansible_password: "{{ lookup('env','ROOT_PWD') }}"
+      tidb_password: "{{ lookup('env','TIDB_PWD') }}"
+  tags:
+      - prepare
+  tasks:
+      - user:
+          name: tidb
+          state: present
+          system: yes
+          password: "{{ tidb_password | password_hash('sha512', 'mysecretsalt') }}"
+          expires: -1
+        name: create tidb user
+      - name: timezone
+        timezone:
+            name: Asia/Shanghai
+      - name: lang
+        lineinfile:
+            path: /etc/environment
+            line: LANG = en_US.UTF8
+      - name: Disable SELinux
+        selinux:
+          state: disabled
+      - name: nice
+        pam_limits:
+          domain: tidb
+          limit_item: nice
+          limit_type: hard
+          value: 0
+      - name: open files
+        pam_limits:
+          domain: tidb
+          limit_item: nofile
+          limit_type: hard
+          value: 1000000
+      - name: user process
+        pam_limits:
+          domain: tidb
+          limit_item: nproc
+          limit_type: hard
+          value: 4096
+      - name: address space
+        pam_limits:
+          domain: tidb
+          limit_item: as
+          limit_type: hard
+          value: -1
+      - name: file size
+        pam_limits:
+          domain: tidb
+          limit_item: fsize
+          limit_type: hard
+          value: -1
+      - name: io scheduler
+        lineinfile:
+            path: /etc/default/grub
+            line: GRUB_CMDLINE_LINUX_DEFAULT='quiet splash elevator=noop'
+      - name: transparent hugepages
+        shell:
+          cmd: "echo always > /sys/kernel/mm/transparent_hugepage/enabled"
+      - name: vm.swappiness
+        sysctl:
+          name: vm.swappiness
+          value: '0'
+          state: present
+      - name: net.core.somaxconn
+        sysctl:
+          name: net.core.somaxconn
+          value: '32768'
+          state: present
+      - name: net.ipv4.tcp_syncookies
+        sysctl:
+          name: net.ipv4.tcp_syncookies
+          value: '0'
+          state: present
+      - reboot:
+          post_reboot_delay: 5
+- hosts: all
+  name: deploy binaries
+  gather_facts: no
+  vars:
+      ansible_password: "{{ lookup('env','TIDB_PWD') }}"
+  tasks:
+      - unarchive:
+          remote_src: no
+          creates: /home/tidb/tidb-latest-linux-amd64
+          dest: /home/tidb
+          mode: 0755
+          src: downloads/tidb-latest-linux-amd64.tar.gz
+- hosts: pd_servers
+  name: start pd servers
+  gather_facts: no
+  tags: pd
+  vars:
+      ansible_password: "{{ lookup('env','TIDB_PWD') }}"
+      initial_cluster: "{{ groups['pd_servers'] | join('=http://')  }}:2379"
+      nodelist: "{%for host in groups['pd_servers']%}{{host}}=http://{{hostvars[host].ansible_host}}:2380{% if not loop.last %},{% endif %}{% endfor %}"
+      cmdline: "nohup ./bin/pd-server --data-dir=pd --log-file=pd.log -L info --name={{inventory_hostname}} --client-urls='http://{{ansible_host}}:2379' --peer-urls='http://{{ansible_host}}:2380' --initial-cluster='{{nodelist}}' </dev/null >/dev/null 2>&1 &"
+  tasks:
+      - debug:
+          msg: "{{cmdline}}"
+      - shell:
+          chdir: /home/tidb/tidb-v3.0.12-linux-amd64
+          cmd: "{{cmdline}}"
+- hosts: tikv_servers
+  name: start tikv servers
+  gather_facts: no
+  tags: tikv
+  vars:
+      ansible_password: "{{ lookup('env','TIDB_PWD') }}"
+      pd_urls: "{{ groups['pd_servers'] | map('extract', hostvars, ['ansible_host']) | join(':2379,') }}:2379"
+      cmdline: "nohup ./bin/tikv-server --pd='{{pd_urls}}' --data-dir=tikv --log-file=tikv.log --addr='{{ansible_host}}:20160' --status-addr='{{ansible_host}}:20180' </dev/null >/dev/null 2>&1 &"
+  tasks:
+      - debug:
+          msg: "{{cmdline}}"
+      - shell:
+          chdir: /home/tidb/tidb-v3.0.12-linux-amd64
+          cmd: "{{cmdline}}"
+- hosts: tidb_servers
+  name: start tidb servers
+  gather_facts: no
+  tags: tidb
+  vars:
+      ansible_password: "{{ lookup('env','TIDB_PWD') }}"
+      pd_urls: "{{ groups['pd_servers'] | map('extract', hostvars, ['ansible_host']) | join(':2379,') }}:2379"
+      cmdline: "nohup ./bin/tidb-server --store=tikv --log-file=tidb.log --path='{{pd_urls}}' </dev/null >/dev/null 2>&1 &"
+  tasks:
+      - debug:
+          msg: "{{cmdline}}"
+      - shell:
+          chdir: /home/tidb/tidb-v3.0.12-linux-amd64
+          cmd: "{{cmdline}}"
+

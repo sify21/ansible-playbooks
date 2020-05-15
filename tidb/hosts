@@ -7,9 +7,9 @@
 10.95.14.67
 
 [pd_servers]
-10.95.14.65
-10.95.14.66
-10.95.14.67
+pd1 ansible_host=10.95.14.65
+pd2 ansible_host=10.95.14.66
+pd3 ansible_host=10.95.14.67
 
 [all:vars]
 ansible_user=tidb
